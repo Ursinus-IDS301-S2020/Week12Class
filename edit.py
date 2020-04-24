@@ -133,9 +133,14 @@ def edit(a, b, table):
         result = table[i, j]
     return result
 
+LEFT = 0
+UP = 1
+DIAG = 2
+
 def edit_iter(s1, s2):
     global count
     table = -1*np.ones((len(s1)+1, len(s2)+1))
+    moves = np.zeros_like(table)
     # Base cases / stopping conditions
     table[0, :] = np.arange(table.shape[1])
     table[:, 0] = np.arange(table.shape[0])
@@ -145,19 +150,36 @@ def edit_iter(s1, s2):
             cost = 0
             if s1[i-1] != s2[j-1]:
                 cost = 1
-            table[i, j] = min(table[i, j-1] + 1, # left 
-                              table[i-1, j] + 1, # Up
-                              table[i-1, j-1] + cost)
-    print(table)
+            costs = np.array([table[i, j-1] + 1, # left
+                              table[i-1, j] + 1, # up
+                              table[i-1, j-1] + cost]) # diag
+            idx = np.argmin(costs)
+            table[i, j] = costs[idx]
+            moves[i, j] = idx
+            
+    # Backtrace
+    # Start at the lower right, and follow the arrows
+    # until we get to the upper left
+    path = [[len(s1), len(s2)]]
+    # while row of the last thing you did is not zero
+    # OR the col of the last thing did is not zero
+    while path[-1][0] != 0 or path[-1][1] != 0:
+        i, j = path[-1]
+        if moves[i, j] == LEFT:
+            j = j - 1
+        elif moves[i, j] == UP:
+            i = i - 1
+        elif moves[i, j] == DIAG:
+            i = i - 1
+            j = j - 1
+        path.append([i, j])
+    
     # Return element in lower right corner for
     # the cost of matching the entire strings
-    return table[-1, -1]
+    return table[-1, -1], path
 
-s1 = "schoolsch"
-s2 = "foolsfoo"
-
-edit_iter(s1, s2)
-
+s1 = "school"
+s2 = "fools"
 
 count = 0
 print(edit_naive(s1, s2))
@@ -169,5 +191,6 @@ print(edit(s1, s2, table))
 print("count = ", count)
 
 count = 0
-print(edit_iter(s1, s2))
-print("count = ", count)
+cost, path = edit_iter(s1, s2)
+print(cost)
+print(path)
