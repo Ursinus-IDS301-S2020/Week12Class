@@ -143,7 +143,9 @@ def edit_iter(s1, s2):
     moves = np.zeros_like(table)
     # Base cases / stopping conditions
     table[0, :] = np.arange(table.shape[1])
+    moves[0, :] = LEFT
     table[:, 0] = np.arange(table.shape[0])
+    moves[:, 0] = UP
     for i in range(1, len(s1)+1): # Row
         for j in range(1, len(s2)+1): # Col
             count += 1
