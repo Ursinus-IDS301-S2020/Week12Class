@@ -1,0 +1,362 @@
+<html>
+		<script src = "DTW2D.js"></script>
+<body>
+    <h1>2D Dynamic Time Warping Demo</h1>
+    <h3>Liz Dempsey and Chris Tralie</h3>
+    <table>
+        <tr>
+            <td>
+                <canvas id = "tricanvas" width = "600" height = "600" style="border:1px solid #000000;">
+                </canvas>
+            </td>
+            <td>
+                <table>
+                    <tr>
+                        <td>
+                        	<button type = "button" onclick = "callChooseX()">Select X points</button>
+                        </td>
+                    </tr>
+
+                    <tr>
+                        <td>
+                       		<button type = "button" onclick = "callChooseY()">Select Y points</button>
+                        </td>
+					</tr>
+					
+					<tr>
+						<td>
+							<button type = "button" onclick = "drawLine(xpoints)">Draw Line X</button>
+						</td>
+					</tr>
+
+					<tr>
+						<td>
+							<button type = "button" onclick = "drawLine(ypoints)">Draw Line Y</button>
+						</td>
+					</tr>
+
+					<tr>
+						<td>
+							<button type = "button" onclick = "doMatchPoints()">Match Points</button>
+						</td>
+                    </tr>
+					<tr>
+						<td>
+							<button type = "button" onclick = "interpolate10x()">Interpolate 10x</button>
+						</td>
+					</tr>
+					<tr>
+						<td>
+							<input type = "checkbox" id="subsequenceCheckbox"> Subsequence
+						</td>
+					</tr>
+
+                </table>
+            </td>
+        </tr>
+
+        <tr>
+            <td colspan=2>
+                <canvas id = "debugCanvas" width = "600" height = "400" style="border:1px solid #000000;">
+                </canvas>
+            </td>
+        </tr>
+
+    </table>
+
+<script>
+	let canvas = document.getElementById('tricanvas');
+    let ctx = canvas.getContext("2d"); //For drawing
+    
+    let debugCanvas = document.getElementById('debugCanvas');
+    let debugCtx = debugCanvas.getContext("2d");
+
+	//Need this to disable that annoying menu that pops up on right click
+	canvas.addEventListener("contextmenu", function(e){ e.stopPropagation(); e.preventDefault(); return false; }); 
+
+	let xpoints = [];
+    let ypoints = [];
+    let selectingX = true;
+
+    function callChooseX() {
+        selectingX = true;
+    }
+    function callChooseY() {
+        selectingX = false;
+    }
+
+	/**
+	 * Return mouse position with respect to the canvas after
+	 * doing a coordinate transformation from global mouse coordinate
+	*/
+	function getMousePos(canvas, evt) {
+		let rect = canvas.getBoundingClientRect();
+		return {
+			X: evt.clientX - rect.left,
+			Y: evt.clientY - rect.top
+		};
+	}
+
+	let subsequenceCheckbox = document.getElementById("subsequenceCheckbox");
+	/**
+	 * This function is called to compute the matching, it will set whether it is
+	 * a subsequence or not, and will pass the matching list on to the repaint method
+	 * that will draw the segments between the matching points.
+	 */ 
+	function doMatchPoints(){
+		let isSubSequence = false;
+
+		//if the checkbox is checked then it's a subsequence
+		if(subsequenceCheckbox.checked) {
+			isSubSequence = true;
+		}
+		
+		//setting the match list
+		let result = matchPoints(xpoints, ypoints, isSubSequence);
+        matches = result['matches'];
+
+		//calling repaint to draw the matches
+		repaint(matches);
+
+        const C = result['accumulatedDists'];
+		const W = debugCanvas.width;
+        const H = debugCanvas.height;
+		debugCtx.clearRect(0, 0, W, H);
+        let max = arrMax(C);
+        N = Math.max(C.length, C[0].length);
+        let dx = Math.floor(Math.min(W/2, H) / (N+2));
+        drawMatrix(C, matches, max, dx);
+
+		return matches[xpoints.length-1][ypoints.length-1];
+	}
+
+	function doMatchPointsParallel(){
+
+		let resultPar = matchPointsParallel(xpoints, ypoints);
+        let result = matchPoints(xpoints, ypoints);
+        
+        repaint(result['matches']);
+
+        debugRepaint(result, resultPar);
+	}
+
+	/**
+	 * This function redraws the html canvas each time a point is chosen, and after
+	 * the point matches have been computed.
+	 * 
+	 * @param (num)	matchList	-- the list of points to draw segments between
+	 */ 
+	function repaint(matchList){
+		const dW = 5;
+		const W = canvas.width;
+		const H = canvas.height;
+		ctx.clearRect(0, 0, W, H); // Puts white over everything to clear it
+
+		//drawing the X points
+		ctx.fillStyle = "red";
+		xpoints.forEach(function(p) {
+			ctx.fillRect(p[0]-dW, p[1]-dW, dW*2+1, dW*2+1);
+		});
+		ctx.stroke();
+		
+		//drawing the Y points
+        ctx.fillStyle = "blue";
+		ypoints.forEach(function(p) {
+			ctx.fillRect(p[0]-dW, p[1]-dW, dW*2+1, dW*2+1);
+		});
+        ctx.stroke();
+		
+		//draw matches in here, pass match list to this function
+		//for each match
+		for(var i = 0; i <matchList.length; i++){
+			//current point on path X
+			var currentX = matchList[i][0];
+			//current point on path Y
+			var currentY = matchList[i][1];
+
+			//X and Y coordinates of the current point on path X
+			X0 = xpoints[currentX][0];
+			Y0 = xpoints[currentX][1];
+			
+			//X and Y coordinates of the current point on path Y
+			X1 = ypoints[currentY][0];
+			Y1 = ypoints[currentY][1];
+
+			//eventually want to call a function that does this
+			ctx.beginPath();
+			ctx.moveTo(X0, Y0);
+			ctx.lineTo(X1, Y1);
+			ctx.stroke();
+		}
+	}
+ 
+    /**
+     * Return the maximum value in a 2d array
+     */
+    function arrMax(C) {
+        let m = C[0][0];
+        for (let i = 0; i < C.length; i++) {
+            for (let j = 0; j < C[i].length; j++) {
+                if (C[i][j] > m) {
+                    m = C[i][j];
+                }
+            }
+        }
+        return m;
+    }
+
+    /**
+     * Draw an accumulated cost matrix as a grayscale image
+     * where brighter is higher cost.  Also superimpose a
+     * warping path if it is defined
+     * 
+     * @param {2d array} C Accumulated cost matrix
+     * @param {list of [i, j]} matches Warping path
+     * @param {float} max Max value (mapped to rgb(240, 240, 240))
+     * @param {int} dx Width of each pixel
+     * @param {int} xoffset Left/right offset of image
+    */
+    function drawMatrix(C, matches, max, dx, xoffset) {
+        if (xoffset === undefined) {
+            xoffset = 0;
+        }
+        // First draw the pixels
+        for (let i = 0; i < C.length; i++) {
+            for (let j = 0; j < C[i].length; j++) {
+                if (isNaN(C[i][j])) {
+                    debugCtx.fillStyle = "rgba(255, 0, 0, 255)";
+                }
+                else {
+                    const g = 240*C[i][j]/max;
+                    debugCtx.fillStyle = "rgba("+g+","+g+","+g+", 255)";
+                }
+                debugCtx.fillRect(j*dx+xoffset, i*dx, dx, dx);
+                debugCtx.stroke();
+            }
+        }
+        // Now draw the warping path
+        debugCtx.fillStyle = "red";
+        for (let k = 0; k < matches.length; k++) {
+            let i = matches[k][0];
+            let j = matches[k][1];
+            debugCtx.fillRect(j*dx+xoffset+dx/3, i*dx+dx/3, dx/3, dx/3);
+        }
+    }
+
+    /**
+     * Draw the quadratic accumulated cost matrix with the warping
+     * path on the left, and the parallel cost matrix and warping
+     * path on the right
+     * 
+     * @param {object} Result An object holding accumulated costs and 
+     *                 matches from the original algorithm
+     * @param {object} resultPar An object holding accumulated costs and 
+     *                 matches from the parallel algorithm
+     */
+    function debugRepaint(result, resultPar){
+        const C1 = result['accumulatedDists'];
+        const C2 = resultPar['accumulatedDists'];
+		const W = debugCanvas.width;
+        const H = debugCanvas.height;
+		debugCtx.clearRect(0, 0, W, H); // Puts white over everything to clear it
+
+        // Step 1: Figure out canvas dimensions
+        // Figure out the max value, which will tell us how
+        // to scale the brightness of each pixel
+        let max = Math.max(arrMax(C1), arrMax(C2));
+        // Figure out the spatial range of each pixel so the images
+        // fit on the canvas as 1x2 subplots
+        N = Math.max(C1.length, C1[0].length);
+        N = Math.max(N, Math.max(C2.length, C2[0].length));
+        let dx = Math.floor(Math.min(W/2, H) / (N+2)); // Leave 2 cells for padding
+
+        // Step 2: Plot matrices
+        drawMatrix(C1, result['matches'], max, dx);
+        drawMatrix(C2, resultPar['matches'], max, dx, dx*(C1[0].length+2));
+	}
+
+	/**
+	 * This function is called to draw a line between a set of points on the canvas
+	 * 
+	 * @param (num)	pointList -- the list of points to draw line segments between
+	 */ 
+	function drawLine(pointList){
+		//Draw segment lengths for x
+		for (var i = 1; i < pointList.length; i ++){
+			X0 = pointList[i-1][0]; 
+			Y0 = pointList[i-1][1];
+			X1 = pointList[i][0];
+			Y1 = pointList[i][1];
+
+			ctx.fillStyle = "black";
+			ctx.beginPath();
+			ctx.moveTo(X0, Y0);
+			ctx.lineTo(X1, Y1);
+			ctx.stroke();        
+		}
+	}
+
+	function selectPoint(evt) {
+		let mousePos = getMousePos(canvas, evt);
+		const X = mousePos.X;
+		const Y = mousePos.Y
+		let clickType = "LEFT";
+		evt.preventDefault();
+		if (evt.which) {
+			if (evt.which == 3) clickType = "RIGHT";
+			if (evt.which == 2) clickType = "MIDDLE";
+		}
+		else if (evt.button) {
+			if (evt.button == 2) clickType = "RIGHT";
+			if (evt.button == 4) clickType = "MIDDLE";
+		}
+
+		if (clickType == "LEFT") {
+            if (selectingX) {
+                xpoints.push([X, Y]);
+            }
+			else {
+                ypoints.push([X, Y]);
+            }
+		}
+		else if(clickType == "RIGHT") {
+            if (selectingX) {
+                xpoints.pop();
+            }
+            else {
+                ypoints.pop();
+            }
+		}
+		repaint([]);
+    }
+    
+    function interpolatePoints(points, N) {
+        let newpoints = [];
+        let dt = 1.0/N;
+        for (let i = 0; i < points.length-1; i++) {
+            for (let k = 0; k < N; k++) {
+                let t = dt*k;
+                newpoints.push([
+                points[i][0]*(1-t) + points[i+1][0]*t,
+                points[i][1]*(1-t) + points[i+1][1]*t
+            ]);
+            }
+
+        }
+        return newpoints;
+    }
+
+    function interpolate10x() {
+        xpoints = interpolatePoints(xpoints, 10);
+        ypoints = interpolatePoints(ypoints, 10);
+        repaint([]);
+    }
+
+
+	canvas.addEventListener("mousedown", selectPoint);
+	canvas.addEventListener("touchstart", selectPoint); //Works on mobile devices!
+</script>
+
+
+</body>
+</html>
